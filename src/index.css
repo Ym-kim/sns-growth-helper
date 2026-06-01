@@ -1,11 +1,45 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html {
-  scroll-behavior: smooth;
+@layer base {
+  html { scroll-behavior: smooth; }
+
+  body {
+    @apply bg-canvas text-ink-900 antialiased;
+    font-feature-settings: "ss01", "ss02";
+  }
+
+  h1, h2, h3 { letter-spacing: -0.02em; }
 }
 
-body {
-  @apply bg-slate-50 text-slate-800 antialiased;
+@layer utilities {
+  .gradient-text {
+    background: linear-gradient(135deg, #5B3CF5 0%, #E040A0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .card-hover {
+    @apply transition-all duration-200;
+  }
+  .card-hover:hover {
+    @apply -translate-y-0.5 shadow-card-hover;
+  }
+
+  /* 스크롤바 */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply rounded-full bg-ink-100; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-ink-300; }
+
+  /* 접이식 애니메이션 */
+  .collapse-enter { animation: slideDown 0.18s ease-out; }
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
 }
