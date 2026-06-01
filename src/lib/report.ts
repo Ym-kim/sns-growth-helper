@@ -1,25 +1,20 @@
 // 전체 분석 오케스트레이터 + Markdown 리포트 생성.
+// Claude API 키가 있으면 Claude로 향상, 없으면 rule-based 폴백.
 
 import type { AppInput, AppOutput } from "./types";
 import {
-  analyzeAccount,
-  generateConcepts,
-  generatePlatformRecommendation,
-  generateContentMatrix,
-  generateContentLayers,
-  generateExperimentPlan,
-  generateMonetizationFlow,
-  generateProfileSuggestions,
-  generateContentCalendar,
+  analyzeAccount, generateConcepts, generatePlatformRecommendation,
+  generateContentMatrix, generateContentLayers, generateExperimentPlan,
+  generateMonetizationFlow, generateProfileSuggestions, generateContentCalendar,
 } from "./generators";
 import { analyzeBenchmark, generateBenchmarkFinder } from "./benchmark";
 import { generateAIPrompts } from "./prompts";
 import { generateChecklist } from "./checklist";
+import { loadClaudeKey, loadClaudeModel, enhanceWithClaude } from "./claudeApi";
 
 const DISCLAIMER =
   "※ 점수와 추천은 절대적 정답이 아니라 전략 수립을 위한 추정값입니다. 알고리즘은 시점에 따라 바뀌므로 모든 제안은 실험 가설로 보고 반응을 확인하며 조정하세요.";
 
-// 다음 실행 우선순위 TOP 5 도출
 function topPriorities(input: AppInput, scores: ReturnType<typeof analyzeAccount>): string[] {
   const weakest = [...scores].sort((a, b) => a.score - b.score).slice(0, 3);
   const list = [
@@ -33,7 +28,8 @@ function topPriorities(input: AppInput, scores: ReturnType<typeof analyzeAccount
   return list.slice(0, 5);
 }
 
-export function buildOutput(input: AppInput): AppOutput {
+// rule-based 기본 출력 (동기, 항상 동작)
+export function buildBaseOutput(input: AppInput): AppOutput {
   const scores = analyzeAccount(input);
   const concepts = generateConcepts(input);
   const platformRecommendation = generatePlatformRecommendation(input);
@@ -55,30 +51,46 @@ export function buildOutput(input: AppInput): AppOutput {
       followReason: `${input.target || "타깃"}가 ${input.niche || "이 분야"}에서 바로 써먹을 것을 얻기 위해 팔로우`,
       note: DISCLAIMER,
     },
-    scores,
-    concepts,
-    platformRecommendation,
-    benchmarkAnalysis,
-    benchmarkFinder,
-    contentMatrix,
-    contentLayers,
-    experimentPlan,
-    monetizationFlow,
-    profileSuggestions,
-    calendar,
-    aiPrompts,
-    checklist,
-    reportMarkdown: "",
+    scores, concepts, platformRecommendation, benchmarkAnalysis, benchmarkFinder,
+    contentMatrix, contentLayers, experimentPlan, monetizationFlow,
+    profileSuggestions, calendar, aiPrompts, checklist, reportMarkdown: "",
   };
-
   out.reportMarkdown = exportReport(input, out, topPriorities(input, scores));
   return out;
+}
+
+// 메인 빌드 함수 (async — Claude 있으면 향상, 없으면 즉시 폴백)
+export async function buildOutput(
+  input: AppInput,
+  onProgress?: (msg: string) => void
+): Promise<{ output: AppOutput; usedClaude: boolean; claudeError?: string }> {
+  onProgress?.("기본 분석 생성 중…");
+  const base = buildBaseOutput(input);
+
+  const apiKey = loadClaudeKey();
+  if (!apiKey.trim()) {
+    return { output: base, usedClaude: false };
+  }
+
+  const model = loadClaudeModel();
+  onProgress?.("Claude AI 분석 중… (10~20초 소요)");
+  const result = await enhanceWithClaude(input, base, apiKey, model, onProgress);
+
+  if (result.usedClaude) {
+    // reportMarkdown을 향상된 결과로 재생성
+    const finalOutput = {
+      ...result.output,
+      reportMarkdown: exportReport(input, result.output, topPriorities(input, result.output.scores)),
+    };
+    return { output: finalOutput, usedClaude: true };
+  } else {
+    return { output: base, usedClaude: false, claudeError: result.error };
+  }
 }
 
 export function exportReport(input: AppInput, out: AppOutput, priorities: string[]): string {
   const L: string[] = [];
   const h = (s: string) => L.push(`\n## ${s}\n`);
-  const top = out.concepts[0];
 
   L.push(`# SNS 계정 전략 리포트`);
   L.push(`> ${out.summary.note}`);
@@ -113,14 +125,13 @@ export function exportReport(input: AppInput, out: AppOutput, priorities: string
       L.push(`- (${i + 1}) ${b.sourceLabel}`);
       L.push(`  - 후킹: ${b.hook}`);
       L.push(`  - 감정: ${b.emotions.join(", ")}`);
-      L.push(`  - 따라 해도 되는 것: ${b.safeToCopy} / 위험: ${b.riskyToCopy}`);
     });
   }
 
   h("7. 콘텐츠 유형 매트릭스");
   out.contentMatrix.forEach((m) => L.push(`- **${m.type}** (${m.purpose}): 제목 예) ${m.titles[0]}`));
 
-  h("8. 콘텐츠 포맷 실험안 (주제 유지·포맷 변경)");
+  h("8. 콘텐츠 포맷 실험안");
   out.experimentPlan.slice(0, 6).forEach((e) =>
     L.push(`- **${e.format}** (${e.difficulty}, ${e.estTime}): 후킹 예) ${e.hooks[0]}`)
   );
