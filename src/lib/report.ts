@@ -33,7 +33,19 @@ function topPriorities(input: AppInput, scores: ReturnType<typeof analyzeAccount
   return list.slice(0, 5);
 }
 
-export function buildOutput(input: AppInput): AppOutput {
+// AI 응답(reportMarkdown 제외)에 마크다운 리포트를 채워 완성된 AppOutput 을 만든다.
+// (src/lib/api.ts 에서 /api/generate 응답을 받은 뒤 호출)
+export function attachReportMarkdown(
+  input: AppInput,
+  partial: Omit<AppOutput, "reportMarkdown">,
+): AppOutput {
+  const out: AppOutput = { ...partial, reportMarkdown: "" };
+  out.reportMarkdown = exportReport(input, out, topPriorities(input, out.scores));
+  return out;
+}
+
+// 규칙 기반 로컬 생성기. Claude API 실패 시 fallback 으로 사용한다.
+export function buildOutputLocal(input: AppInput): AppOutput {
   const scores = analyzeAccount(input);
   const concepts = generateConcepts(input);
   const platformRecommendation = generatePlatformRecommendation(input);
